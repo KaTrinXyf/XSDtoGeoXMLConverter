@@ -33,7 +33,7 @@ def main(argv=None):
         return
         
 def readSchema(schemasInfo):
-    # Read the json to get the name of the all the schemas + version number + .xsd location
+    # Read the json to get the names of the all the schemas + version number + .xsd location
     schemasList = {}
     for rec in schemasInfo:
         t = rec['title']
@@ -46,10 +46,10 @@ def readSchema(schemasInfo):
 #         print s + "," + schemasList[s]
 
     root = Tk()
-     
+
     returnValue = True
     while returnValue:
-        returnValue = ListBoxChoice(root, "XSD to GeoXML", "Select one of the schemas below", schemasList.keys()).returnValue()
+        returnValue = ListBoxChoice(root, "XSD to GeoXML Converter", "Select one of the schemas below", schemasList.keys()).returnValue()
         if returnValue:
             createGeoXML(schemasList, returnValue)
             print "GeoXML created for " + returnValue
@@ -62,17 +62,11 @@ def createGeoXML(schemasList, schemaFile):
     schema = urllib2.urlopen(schemaUrl).read()  
     domXSD = parseString(schema)  
 
-    # Hardcoded files for testing
     path =  os.path.dirname(os.path.abspath(__file__))
-#     path = "C:\\Users\\jalisdairi\\Desktop\\XSDtoGeoXML Test\\" # Path
-#     xsd = path + "ActiveFaults_1.xsd"                      # Schema file
-    xmlTemplate = path + "\\mapping_file_template.xml"            # Template file
-#     output = open(path + '\\output.xml', 'w')                     # Create output file
-    output = open(path + '\\' + str(schemaFile.replace("/","")) + '.xml', 'w')                     # Create output file
+    xmlTemplate = path + "\\mapping_file_template.xml"                              # Template file
+    fileName = path + '\\' + str(schemaFile.replace("/","")) + '.xml'
+    output = open(fileName, 'w')      # Create output file
 
-    # Read schema
-#     domXSD = parse(xsd)
-    
     schemaFields = []
     schemaTypes = []
     schemaReq = []
@@ -89,6 +83,13 @@ def createGeoXML(schemasList, schemaFile):
     
     # Get the index of the OBJECTID field and remove that and any fields before it
     objectIDIndex = schemaFields.index("OBJECTID")
+    # Can only convert schemas with single layers right now
+    if objectIDIndex != 1:
+        print "Unable to create GeoXML for schemas with multiple layers at this time."
+        output.write("Unable to create GeoXML for schemas with multiple layers at this time.")
+        output.close()
+        os.rename(fileName, schemaFile + " Error")
+        exit()
     layerNames = []
     i = 0
     while i < objectIDIndex:
@@ -186,7 +187,7 @@ class ListBoxChoice(object):
 
         if title:
             self.modalPane.title(title)
-
+            
         if message:
             Label(self.modalPane, text=message).pack(padx=5, pady=5)
 
