@@ -47,25 +47,53 @@ def readSchema(schemasInfo):
 
     root = Tk()
 
-    returnValue = True
-    while returnValue:
-        returnValue = ListBoxChoice(root, "XSD to GeoXML Converter", "Select one of the schemas below", schemasList.keys()).returnValue()
-        if returnValue:
-            createGeoXML(schemasList, returnValue)
-            print "GeoXML created for " + returnValue
-    return
-     
-def createGeoXML(schemasList, schemaFile):
+    schemaFile = True
+    while schemaFile:
+        schemaFile = ListBoxChoice(root, "XSD to GeoXML Converter", "Select one of the schemas below", schemasList.keys()).returnValue()
+        if schemaFile:
+            
+            # Get the .xsd schema location for the user inputed schema name and convert the schema       
+            try:
+                schemaUrl = schemasList[schemaFile]
+                newGeoXML = createGeoXML(schemaUrl)
+                if newGeoXML == 1:
+                    print "Unable to create GeoXML for schemas with multiple layers at this time."
+                else:
+                    print newGeoXML
+                    path =  os.path.dirname(os.path.abspath(__file__))
+                    fileName = path + '\\' + str(schemaFile.replace("/","")) + '.xml'
+                    outGeoXML = open(fileName, 'w')      # Create output file
+                    # Write modified template to new file
+                    outGeoXML.write(newGeoXML)
+                    outGeoXML.close()
+                    print "GeoXML created for " + schemaFile
+            except:
+                print "Error converting schema."
     
-    # Get the .xsd schema location for the user inputed schema name and read the schema       
-    schemaUrl = schemasList[schemaFile]
-    schema = urllib2.urlopen(schemaUrl).read()  
-    domXSD = parseString(schema)  
+    return
+
+def createGeoXML(schemaUrl):
+    """Convert schema XSD to GeoXML
+    
+    Imports Needed: 
+    from xml.dom.minidom import parse, parseString
+    import os
+    import urllib2
+    
+    Arguments:
+    schemaUrl -- string containing the url of a schema to be converted
+    
+    Return value:
+    output --    string containing GeoXML if able to convert or
+                 1 if unable to convert because there are mulitple layers
+    
+    """
+    
+    schema = urllib2.urlopen(schemaUrl).read()
+    domXSD = parseString(schema)
 
     path =  os.path.dirname(os.path.abspath(__file__))
-    xmlTemplate = path + "\\mapping_file_template.xml"                              # Template file
-    fileName = path + '\\' + str(schemaFile.replace("/","")) + '.xml'
-    output = open(fileName, 'w')      # Create output file
+    xmlTemplate = path + "\\mapping_file_template.xml"     # Template file
 
     schemaFields = []
     schemaTypes = []
@@ -81,94 +109,82 @@ def createGeoXML(schemasList, schemaFile):
         schemaTypes.append(node.getAttribute('type'))
         schemaReq.append(node.getAttribute('minOccurs'))
     
-    # Get the index of the OBJECTID field and remove that and any fields before it
+    # Get the index of the OBJECTID field
     objectIDIndex = schemaFields.index("OBJECTID")
-    # Can only convert schemas with single layers right now
+    
+    # Can only convert schemas with single layers right now so output 1 and don't process
     if objectIDIndex != 1:
-        print "Unable to create GeoXML for schemas with multiple layers at this time."
-        output.write("Unable to create GeoXML for schemas with multiple layers at this time.")
-        output.close()
-        os.rename(fileName, schemaFile + " Error")
-        exit()
-    layerNames = []
-    i = 0
-    while i < objectIDIndex:
-        layerNames.append(schemaFields[0])
+        output = 1
+        
+    # Remove any fields before the OBJECTID field
+    else:
+        layerNames = []
+        i = 0
+        while i < objectIDIndex:
+            layerNames.append(schemaFields[0])
+            schemaFields.pop(0)
+            schemaTypes.pop(0)
+            schemaReq.pop(0)
+            i = i + 1
+        del i
+    
+        # Remove the OBJECTID field
         schemaFields.pop(0)
         schemaTypes.pop(0)
         schemaReq.pop(0)
-        i = i + 1
-    del i
-
-    # Remove the OBJECTID field
-    schemaFields.pop(0)
-    schemaTypes.pop(0)
-    schemaReq.pop(0)
-    
-    # Remove any Shape fields
-#     foundAll = False
-#     while foundAll == False:
-#         try:
-#             shapeIndex = schemaFields.index("Shape")
-#             schemaFields.pop(shapeIndex)
-#             schemaTypes.pop(shapeIndex)
-#             schemaReq.pop(shapeIndex)
-#         except:
-#             foundAll = True
-#     del foundAll
-    
-    # Read template
-    dom = parse(xmlTemplate)
-    
-    # Modify template
-    
-    # Change the value of <uri> to the schemaURI
-    elemSchemaURI = dom.getElementsByTagName("uri")[0].childNodes[0]
-    elemSchemaURI.nodeValue = schemaUri
-    
-    # Change "LAYER_NAME" in <id> to the layerName in lowercase
-    elemDataStoreID = dom.getElementsByTagName("id")[0].childNodes[0]
-    elemDataStoreID.nodeValue = elemDataStoreID.nodeValue.replace("LAYER_NAME", layerNames[0].lower())
-    
-    # Change the value of <schemaUri> to the schemaURI
-    elemSchemaURI = dom.getElementsByTagName("schemaUri")[0].childNodes[0]
-    elemSchemaURI.nodeValue = schemaUrl
-    
-    # Change "LAYER_NAME" in <sourceDataStore> to the layerName in lowercase
-    elemTargetAttribute = dom.getElementsByTagName("sourceDataStore")[0].childNodes[0]
-    elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", layerNames[0].lower())
-    
-    # Change "LAYER_NAME" in <targetElement> to the layerName
-    elemTargetAttribute = dom.getElementsByTagName("targetElement")[0].childNodes[0]
-    elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", layerNames[0])
-    
-    # Get the nodes
-    nodeAttributeMappings = dom.getElementsByTagName("attributeMappings")[0]
-    nodeAttributeMapping = dom.getElementsByTagName("AttributeMapping")[0]
-
-    # For each schema field in the schemaFields list
-    for schemaField in schemaFields:
-        # Make a copy of the <AttributeMapping> node
-        nodeCopy = nodeAttributeMapping.cloneNode(True)
         
-        # Change "LAYER_NAME" in <targetAttribute> to the schemaField
-        elemTargetAttribute = nodeCopy.getElementsByTagName("targetAttribute")[0].childNodes[0]
-        elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", schemaField)
+        # Read template
+        dom = parse(xmlTemplate)
         
-        # Change "LAYER_NAME" in <OCQL> to the schemaField in lowercase
-        elemOCQL = nodeCopy.getElementsByTagName("OCQL")[0].childNodes[0]
-        elemOCQL.nodeValue = schemaField.lower()
+        # Modify template
         
-        # Append the modified <AttributeMapping> node to the end of <attributeMappings> node
-        nodeAttributeMappings.appendChild(nodeCopy)
+        # Change the value of <uri> to the schemaURI
+        elemSchemaURI = dom.getElementsByTagName("uri")[0].childNodes[0]
+        elemSchemaURI.nodeValue = schemaUri
+        
+        # Change "LAYER_NAME" in <id> to the layerName in lowercase
+        elemDataStoreID = dom.getElementsByTagName("id")[0].childNodes[0]
+        elemDataStoreID.nodeValue = elemDataStoreID.nodeValue.replace("LAYER_NAME", layerNames[0].lower())
+        
+        # Change the value of <schemaUri> to the schemaURI
+        elemSchemaURI = dom.getElementsByTagName("schemaUri")[0].childNodes[0]
+        elemSchemaURI.nodeValue = schemaUrl
+        
+        # Change "LAYER_NAME" in <sourceDataStore> to the layerName in lowercase
+        elemTargetAttribute = dom.getElementsByTagName("sourceDataStore")[0].childNodes[0]
+        elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", layerNames[0].lower())
+        
+        # Change "LAYER_NAME" in <targetElement> to the layerName
+        elemTargetAttribute = dom.getElementsByTagName("targetElement")[0].childNodes[0]
+        elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", layerNames[0])
+        
+        # Get the nodes
+        nodeAttributeMappings = dom.getElementsByTagName("attributeMappings")[0]
+        nodeAttributeMapping = dom.getElementsByTagName("AttributeMapping")[0]
     
-    # Change "LAYER_NAME" in the first <targetAttribute> to the layerName
-    elemTargetAttribute = nodeAttributeMapping.getElementsByTagName("targetAttribute")[0].childNodes[0]
-    elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", layerNames[0])
+        # For each schema field in the schemaFields list
+        for schemaField in schemaFields:
+            # Make a copy of the <AttributeMapping> node
+            nodeCopy = nodeAttributeMapping.cloneNode(True)
+            
+            # Change "LAYER_NAME" in <targetAttribute> to the schemaField
+            elemTargetAttribute = nodeCopy.getElementsByTagName("targetAttribute")[0].childNodes[0]
+            elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", schemaField)
+            
+            # Change "LAYER_NAME" in <OCQL> to the schemaField in lowercase
+            elemOCQL = nodeCopy.getElementsByTagName("OCQL")[0].childNodes[0]
+            elemOCQL.nodeValue = schemaField.lower()
+            
+            # Append the modified <AttributeMapping> node to the end of <attributeMappings> node
+            nodeAttributeMappings.appendChild(nodeCopy)
+        
+        # Change "LAYER_NAME" in the first <targetAttribute> to the layerName
+        elemTargetAttribute = nodeAttributeMapping.getElementsByTagName("targetAttribute")[0].childNodes[0]
+        elemTargetAttribute.nodeValue = elemTargetAttribute.nodeValue.replace("LAYER_NAME", layerNames[0])
+        
+        output = dom.toxml()
 
-    # Write modified template to new file
-    output.write(dom.toxml())
-    return
+    return output
 
 # From http://code.activestate.com/recipes/410646-tkinter-listbox-example/
 class ListBoxChoice(object):
